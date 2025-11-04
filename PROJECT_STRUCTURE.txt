@@ -1,0 +1,11 @@
+./ROADMAP.md
+./QUICK_START.md
+./.gitignore
+./backend/src/main/resources/application.properties
+./backend/src/main/resources/schema.sql
+./backend/src/main/java/com/schoolsystem/SchoolManagementApplication.java
+./backend/src/main/java/com/schoolsystem/entity/UserRole.java
+./backend/src/main/java/com/schoolsystem/entity/User.java
+./backend/pom.xml
+./PROJECT_STRUCTURE.txt
+./README.md

@@ -76,13 +76,6 @@
             <scope>runtime</scope>
         </dependency>
         
-        <!-- Africa's Talking SDK -->
-        <dependency>
-            <groupId>com.africastalking</groupId>
-            <artifactId>core</artifactId>
-            <version>3.4.10</version>
-        </dependency>
-        
         <!-- PDF Generation -->
         <dependency>
             <groupId>com.itextpdf</groupId>

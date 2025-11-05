@@ -1,138 +1,181 @@
 package com.schoolsystem.security;
 
 import io.jsonwebtoken.*;
+import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
-import java.nio.charset.StandardCharsets;
 import java.util.Date;
 
-/**
- * JWT Token Provider - Handles creation and validation of JWT tokens
- * 
- * Why JWT?
- * - Stateless authentication (no server-side session storage)
- * - Scalable (works across multiple servers)
- * - Contains claims (user info) in the token itself
- * - Industry standard for REST APIs
- */
 @Component
 public class JwtTokenProvider {
-    
+
     @Value("${jwt.secret}")
     private String jwtSecret;
-    
+
     @Value("${jwt.expiration}")
     private long jwtExpirationMs;
-    
+
+    @Value("${jwt.refresh-expiration}")
+    private long jwtRefreshExpirationMs;
+
     /**
-     * Generate JWT token from user authentication
-     * 
-     * Token Structure:
-     * Header.Payload.Signature
-     * 
-     * Payload contains:
-     * - sub (subject): username
-     * - iat (issued at): timestamp
-     * - exp (expiration): timestamp
+     * Generate JWT token from Authentication
      */
     public String generateToken(Authentication authentication) {
-        UserPrincipal userPrincipal = (UserPrincipal) authentication.getPrincipal();
-        
+        String username = authentication.getName();
+        return generateToken(username);
+    }
+
+    /**
+     * Generate JWT token from username
+     */
+    public String generateToken(String username) {
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + jwtExpirationMs);
-        
-        SecretKey key = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
-        
+
+        SecretKey key = getSigningKey();
+
         return Jwts.builder()
-                .setSubject(userPrincipal.getUsername())
-                .claim("userId", userPrincipal.getId())
-                .claim("role", userPrincipal.getRole().toString())
-                .setIssuedAt(now)
-                .setExpiration(expiryDate)
-                .signWith(key, SignatureAlgorithm.HS512)
+                .subject(username)
+                .issuedAt(now)
+                .expiration(expiryDate)
+                .signWith(key)
                 .compact();
     }
-    
+
     /**
-     * Generate token from username (for 2FA completion)
+     * Generate JWT token with user details (username, userId, role)
+     * Used by AuthService after login
      */
     public String generateTokenFromUsername(String username, Long userId, String role) {
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + jwtExpirationMs);
-        
-        SecretKey key = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
-        
+
+        SecretKey key = getSigningKey();
+
         return Jwts.builder()
-                .setSubject(username)
-                .claim("userId", userId)
-                .claim("role", role)
-                .setIssuedAt(now)
-                .setExpiration(expiryDate)
-                .signWith(key, SignatureAlgorithm.HS512)
+                .subject(username)           // Username as subject
+                .claim("userId", userId)     // Add userId as claim
+                .claim("role", role)         // Add role as claim
+                .issuedAt(now)
+                .expiration(expiryDate)
+                .signWith(key)
                 .compact();
     }
-    
+
     /**
-     * Extract username from JWT token
+     * Generate refresh token
+     */
+    public String generateRefreshToken(String username) {
+        Date now = new Date();
+        Date expiryDate = new Date(now.getTime() + jwtRefreshExpirationMs);
+
+        SecretKey key = getSigningKey();
+
+        return Jwts.builder()
+                .subject(username)
+                .issuedAt(now)
+                .expiration(expiryDate)
+                .signWith(key)
+                .compact();
+    }
+
+    /**
+     * Get username from JWT token
      */
     public String getUsernameFromToken(String token) {
-        SecretKey key = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
-        
-        Claims claims = Jwts.parserBuilder()
-                .setSigningKey(key)
+        SecretKey key = getSigningKey();
+
+        Claims claims = Jwts.parser()
+                .verifyWith(key)
                 .build()
-                .parseClaimsJws(token)
-                .getBody();
-        
+                .parseSignedClaims(token)
+                .getPayload();
+
         return claims.getSubject();
     }
-    
+
     /**
-     * Extract user ID from token
+     * Get userId from JWT token
      */
     public Long getUserIdFromToken(String token) {
-        SecretKey key = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
-        
-        Claims claims = Jwts.parserBuilder()
-                .setSigningKey(key)
+        SecretKey key = getSigningKey();
+
+        Claims claims = Jwts.parser()
+                .verifyWith(key)
                 .build()
-                .parseClaimsJws(token)
-                .getBody();
-        
+                .parseSignedClaims(token)
+                .getPayload();
+
         return claims.get("userId", Long.class);
     }
-    
+
+    /**
+     * Get role from JWT token
+     */
+    public String getRoleFromToken(String token) {
+        SecretKey key = getSigningKey();
+
+        Claims claims = Jwts.parser()
+                .verifyWith(key)
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
+
+        return claims.get("role", String.class);
+    }
+
     /**
      * Validate JWT token
-     * 
-     * Checks:
-     * 1. Token signature is valid (not tampered)
-     * 2. Token hasn't expired
-     * 3. Token format is correct
      */
     public boolean validateToken(String token) {
         try {
-            SecretKey key = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
-            
-            Jwts.parserBuilder()
-                    .setSigningKey(key)
+            SecretKey key = getSigningKey();
+
+            Jwts.parser()
+                    .verifyWith(key)
                     .build()
-                    .parseClaimsJws(token);
-            
+                    .parseSignedClaims(token);
+
             return true;
-        } catch (MalformedJwtException ex) {
-            System.err.println("Invalid JWT token: " + ex.getMessage());
-        } catch (ExpiredJwtException ex) {
-            System.err.println("Expired JWT token: " + ex.getMessage());
-        } catch (UnsupportedJwtException ex) {
-            System.err.println("Unsupported JWT token: " + ex.getMessage());
-        } catch (IllegalArgumentException ex) {
-            System.err.println("JWT claims string is empty: " + ex.getMessage());
+        } catch (JwtException | IllegalArgumentException e) {
+            System.err.println("Invalid JWT token: " + e.getMessage());
         }
         return false;
+    }
+
+    /**
+     * Get expiration date from token
+     */
+    public Date getExpirationDateFromToken(String token) {
+        SecretKey key = getSigningKey();
+
+        Claims claims = Jwts.parser()
+                .verifyWith(key)
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
+
+        return claims.getExpiration();
+    }
+
+    /**
+     * Check if token is expired
+     */
+    public boolean isTokenExpired(String token) {
+        Date expiration = getExpirationDateFromToken(token);
+        return expiration.before(new Date());
+    }
+
+    /**
+     * Get signing key from secret
+     */
+    private SecretKey getSigningKey() {
+        byte[] keyBytes = Decoders.BASE64.decode(jwtSecret);
+        return Keys.hmacShaKeyFor(keyBytes);
     }
 }
